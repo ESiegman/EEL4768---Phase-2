@@ -15,14 +15,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Icarus Verilog
-        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Install Icarus Verilog and yosys
+        run: sudo apt-get update && sudo apt-get install -y iverilog yosys
+
+      - name: Install netlistsvg
+        run: npm install -g netlistsvg
 
       - name: Run your testbenches
         id: check
         run: |
           set +e
           ./run_test.sh ci
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Generate gate-level schematics
+        id: schematics
+        if: always()
+        run: |
+          set +e
+          ./gen_schematics.sh
           echo "status=$?" >> "$GITHUB_OUTPUT"
 
       - name: Build job summary
@@ -79,7 +90,21 @@ jobs:
               "",
               "Compile/sim logs and waveforms are attached below as the "
               "`self-check-output` artifact.",
+              "",
           ]
+
+          schem_dir = Path("build/schematics")
+          svgs = sorted(p.stem for p in schem_dir.glob("*.svg")) if schem_dir.exists() else []
+          modules = ["alu", "imm", "rf", "decoder"]
+          lines.append("### Gate-level schematics (yosys + netlistsvg)")
+          lines.append("")
+          lines.append(", ".join(f"`{m}`" + (" ✅" if m in svgs else " ❌") for m in modules))
+          lines.append("")
+          lines.append(
+              "SVGs are in the `self-check-output` artifact under "
+              "`build/schematics/<module>.svg`. They redraw as real logic is "
+              "added -- an unimplemented module renders as just its port boundary."
+          )
 
           with open(step_summary, "a") as f:
               f.write("\n".join(lines) + "\n")
@@ -89,6 +114,7 @@ jobs:
                   print(f"::error file={label}.v,title={label}::{reason or 'check failed'}")
 
           print(f"::notice title=Phase 2 self-check::{passed} passed, {failed} failed, {skipped} skipped")
+          print(f"::notice title=Schematics::{len(svgs)}/{len(modules)} generated")
 
       - name: Upload run artifacts
         if: always()

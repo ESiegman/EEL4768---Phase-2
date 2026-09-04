@@ -1,9 +1,11 @@
-.PHONY: help test ci clean
+.PHONY: help test ci schematics clean
 
 help:
-	@echo "make test    run your testbenches (writes results/local.txt)"
-	@echo "make ci      same thing, under the name CI uses (results/ci.txt)"
-	@echo "make clean   remove results/ and build/"
+	@echo "make test        run your testbenches (writes results/local.txt)"
+	@echo "make ci          same thing, under the name CI uses (results/ci.txt)"
+	@echo "make schematics  synthesize alu/imm/rf/decoder with yosys and render"
+	@echo "                 gate-level SVGs with netlistsvg (build/schematics/)"
+	@echo "make clean       remove results/ and build/"
 	@echo
 	@echo "Details:      ./run_test.sh <name> [submission_dir]"
 	@echo "Write your own <module>_tb.v for alu, imm, rf and decoder -- see"
@@ -15,6 +17,9 @@ test:
 
 ci:
 	@./run_test.sh ci
+
+schematics:
+	@./gen_schematics.sh
 
 clean:
 	rm -rf results build
