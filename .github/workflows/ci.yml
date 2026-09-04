@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  self-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+
+      - name: Run your testbenches
+        id: check
+        run: |
+          set +e
+          ./run_test.sh ci
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Build job summary
+        if: always()
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+
+          summary_path = Path("results/ci.txt")
+          step_summary = os.environ["GITHUB_STEP_SUMMARY"]
+
+          if not summary_path.exists():
+              with open(step_summary, "a") as f:
+                  f.write(
+                      "# 🔴 Phase 2 self-check — crashed before producing a summary\n\n"
+                      "See the **Run your testbenches** step's log for the traceback "
+                      "(likely a missing iverilog install or a bad run_test.sh invocation).\n"
+                  )
+              print("::error::self-check crashed before writing results/ci.txt")
+              raise SystemExit(0)
+
+          icons = {"PASS": "✅", "FAIL": "❌", "SKIP": "⚪"}
+          rows = []
+          for line in summary_path.read_text().splitlines():
+              m = re.match(r"^(PASS|FAIL|SKIP)\s+(.*)$", line)
+              if not m:
+                  continue
+              status, rest = m.groups()
+              label, _, reason = rest.partition("  --  ")
+              rows.append((status, re.sub(r"\s+", " ", label.strip()), reason.strip()))
+
+          total = len(rows)
+          passed = sum(1 for status, _, _ in rows if status == "PASS")
+          failed = sum(1 for status, _, _ in rows if status == "FAIL")
+          skipped = total - passed - failed
+          emoji = "🔴" if failed else ("🟡" if skipped else "🟢")
+
+          lines = [
+              f"# {emoji} Phase 2 self-check — {passed} passed, {failed} failed, {skipped} skipped",
+              "",
+              "| | Module | Notes |",
+              "|---|---|---|",
+          ]
+          for status, label, reason in rows:
+              lines.append(f"| {icons.get(status, '❔')} | `{label}` | {reason} |")
+          lines.append("")
+
+          lines += [
+              "> There is no autograder for phase 2 — this only runs *your own* "
+              "testbenches (`<module>_tb.v`) against `<module>.v`. A module with no "
+              "testbench yet shows as skipped, not failed.",
+              "",
+              "Compile/sim logs and waveforms are attached below as the "
+              "`self-check-output` artifact.",
+          ]
+
+          with open(step_summary, "a") as f:
+              f.write("\n".join(lines) + "\n")
+
+          for status, label, reason in rows:
+              if status == "FAIL":
+                  print(f"::error file={label}.v,title={label}::{reason or 'check failed'}")
+
+          print(f"::notice title=Phase 2 self-check::{passed} passed, {failed} failed, {skipped} skipped")
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: self-check-output
+          path: |
+            results/
+            build/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Fail the job if any testbench failed
+        if: steps.check.outputs.status != '0'
+        run: exit 1
