@@ -14,6 +14,16 @@ if ! command -v netlistsvg >/dev/null 2>&1; then
     echo "ERROR: netlistsvg not found on PATH (npm i -g netlistsvg)." >&2
     exit 1
 fi
+# Optional: also rasterize each SVG to PNG with rsvg-convert. GitHub's job
+# summary sanitizer strips <img src="data:image/svg+xml..."> (SVG data URIs
+# can carry a <script>/foreignObject payload) but allows data:image/png, so
+# the CI workflow inlines the PNG into the summary and keeps the SVG as the
+# full-quality artifact. Skipped silently if rsvg-convert isn't installed
+# (brew install librsvg / apt install librsvg2-bin).
+HAVE_RSVG=0
+if command -v rsvg-convert >/dev/null 2>&1; then
+    HAVE_RSVG=1
+fi
 
 # Each module's own file plus any modules it instantiates. decoder embeds
 # imm (see decoder.v), so its schematic needs imm.v in the same yosys read.
@@ -50,6 +60,11 @@ for name in alu imm rf decoder; do
         echo "FAIL Schematic: ${name}  --  netlistsvg render error, see build/schematics/${name}.yosys.log"
         overall_status=1
         continue
+    fi
+
+    if [[ "${HAVE_RSVG}" -eq 1 ]]; then
+        png="${OUT_DIR}/${name}.png"
+        rsvg-convert -o "${png}" "${svg}" >> "${log}" 2>&1 || true
     fi
 
     echo "OK   Schematic: ${name}  --  build/schematics/${name}.svg"

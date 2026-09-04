@@ -15,8 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Icarus Verilog and yosys
-        run: sudo apt-get update && sudo apt-get install -y iverilog yosys
+      - name: Install Icarus Verilog, yosys and librsvg
+        run: sudo apt-get update && sudo apt-get install -y iverilog yosys librsvg2-bin
 
       - name: Install netlistsvg
         run: npm install -g netlistsvg
@@ -108,16 +108,28 @@ jobs:
 
           # Inlined as base64 data URIs so they render right on this page
           # instead of only existing inside the downloadable artifact zip.
-          # <img src="data:..."> never executes embedded SVG script content
-          # (image context, not document context), so this is safe even
-          # though netlistsvg's output isn't otherwise sanitized.
+          # Must be PNG, not SVG: an earlier version of this workflow used
+          # data:image/svg+xml and nothing rendered on the real run page --
+          # GitHub's job-summary sanitizer most likely strips SVG data URIs
+          # (they can carry a <script>/foreignObject payload) even though
+          # its CSP allows data: URIs generally. PNG is the safer bet.
+          # gen_schematics.sh rasterizes each SVG with rsvg-convert;
+          # fall back to a text note if that didn't happen (e.g. rsvg-convert
+          # missing locally), the SVG itself is still in the artifact.
           MAX_INLINE_BYTES = 300_000
           for name in modules:
               svg_path = schem_dir / f"{name}.svg"
+              png_path = schem_dir / f"{name}.png"
               if not svg_path.exists():
                   lines.append(f"<details><summary><code>{name}</code> -- not generated</summary></details>")
                   continue
-              raw = svg_path.read_bytes()
+              if not png_path.exists():
+                  lines.append(
+                      f"<details><summary><code>{name}</code> -- PNG not generated "
+                      f"(rsvg-convert missing?), see the SVG in the artifact</summary></details>"
+                  )
+                  continue
+              raw = png_path.read_bytes()
               if len(raw) > MAX_INLINE_BYTES:
                   lines.append(
                       f"<details><summary><code>{name}</code> -- "
@@ -127,7 +139,7 @@ jobs:
               b64 = base64.b64encode(raw).decode("ascii")
               lines.append(
                   f'<details open><summary><code>{name}</code></summary>\n\n'
-                  f'<img src="data:image/svg+xml;base64,{b64}" alt="{name} schematic">\n'
+                  f'<img src="data:image/png;base64,{b64}" alt="{name} schematic">\n'
                   f'</details>'
               )
               lines.append("")
