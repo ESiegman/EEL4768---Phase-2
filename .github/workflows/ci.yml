@@ -145,12 +145,6 @@ jobs:
           modules = ["alu", "imm", "rf", "decoder"]
           lines.append("### Gate-level schematics (yosys + netlistsvg)")
           lines.append("")
-          lines.append(
-              "Unimplemented modules render as just their port boundary -- "
-              "these fill in as you add logic. Full-size SVGs (and the JSON "
-              "netlists) are also in the `self-check-output` artifact."
-          )
-          lines.append("")
 
           # Rendered via a real https:// URL, not a data: URI -- GitHub's
           # job-summary sanitizer strips data: URIs and doesn't render
