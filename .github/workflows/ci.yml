@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -12,6 +13,12 @@ concurrency:
 jobs:
   self-check:
     runs-on: ubuntu-latest
+    # Needed to push generated schematic PNGs to the ci-schematics-img
+    # branch (see "Publish schematics" below) so the job summary can embed
+    # a real https:// URL -- GitHub's job-summary sanitizer strips data:
+    # URIs and doesn't render local/relative image paths at all.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
 
@@ -36,11 +43,50 @@ jobs:
           ./gen_schematics.sh
           echo "status=$?" >> "$GITHUB_OUTPUT"
 
+      - name: Publish schematics for the job summary
+        id: publish
+        if: always()
+        run: |
+          set -e
+          if ! ls build/schematics/*.png >/dev/null 2>&1; then
+            echo "published=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          WORKDIR="$(mktemp -d)"
+          AUTH_URL="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+
+          if git clone --quiet --depth 1 --branch ci-schematics-img "${AUTH_URL}" "${WORKDIR}" 2>/dev/null; then
+            :
+          else
+            git clone --quiet --depth 1 "${AUTH_URL}" "${WORKDIR}"
+            git -C "${WORKDIR}" checkout --orphan ci-schematics-img
+            git -C "${WORKDIR}" rm -rf --quiet . || true
+          fi
+
+          rm -rf "${WORKDIR}/schematics"
+          mkdir -p "${WORKDIR}/schematics"
+          cp build/schematics/*.png "${WORKDIR}/schematics/"
+
+          git -C "${WORKDIR}" config user.name "github-actions[bot]"
+          git -C "${WORKDIR}" config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C "${WORKDIR}" add -A
+          if git -C "${WORKDIR}" diff --cached --quiet; then
+            echo "No change in generated schematics, nothing to push."
+          else
+            git -C "${WORKDIR}" commit --quiet -m "Schematics for ${{ github.sha }} [skip ci]"
+            git -C "${WORKDIR}" push --quiet -f "${AUTH_URL}" HEAD:ci-schematics-img
+          fi
+          echo "published=1" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Build job summary
         if: always()
         shell: python
+        env:
+          PUBLISHED: ${{ steps.publish.outputs.published }}
         run: |
-          import base64
           import os
           import re
           from pathlib import Path
@@ -106,40 +152,32 @@ jobs:
           )
           lines.append("")
 
-          # Inlined as base64 data URIs so they render right on this page
-          # instead of only existing inside the downloadable artifact zip.
-          # Must be PNG, not SVG: an earlier version of this workflow used
-          # data:image/svg+xml and nothing rendered on the real run page --
-          # GitHub's job-summary sanitizer most likely strips SVG data URIs
-          # (they can carry a <script>/foreignObject payload) even though
-          # its CSP allows data: URIs generally. PNG is the safer bet.
-          # gen_schematics.sh rasterizes each SVG with rsvg-convert;
-          # fall back to a text note if that didn't happen (e.g. rsvg-convert
-          # missing locally), the SVG itself is still in the artifact.
-          MAX_INLINE_BYTES = 300_000
+          # Rendered via a real https:// URL, not a data: URI -- GitHub's
+          # job-summary sanitizer strips data: URIs and doesn't render
+          # local/relative image paths at all (confirmed against a live
+          # run; see github.com/orgs/community/discussions/35932 and
+          # /101814). The "Publish schematics" step force-pushes each PNG
+          # to the ci-schematics-img branch, so this links raw content off
+          # that branch. Requires the repo to be public -- for a private
+          # repo, GitHub's camo proxy can't authenticate to fetch it and
+          # this would render as a broken image instead.
+          published = os.environ.get("PUBLISHED") == "1"
+          repo = os.environ["GITHUB_REPOSITORY"]
           for name in modules:
-              svg_path = schem_dir / f"{name}.svg"
               png_path = schem_dir / f"{name}.png"
-              if not svg_path.exists():
+              if not png_path.exists():
                   lines.append(f"<details><summary><code>{name}</code> -- not generated</summary></details>")
                   continue
-              if not png_path.exists():
+              if not published:
                   lines.append(
-                      f"<details><summary><code>{name}</code> -- PNG not generated "
-                      f"(rsvg-convert missing?), see the SVG in the artifact</summary></details>"
+                      f"<details><summary><code>{name}</code> -- generated but not "
+                      f"published, see the artifact</summary></details>"
                   )
                   continue
-              raw = png_path.read_bytes()
-              if len(raw) > MAX_INLINE_BYTES:
-                  lines.append(
-                      f"<details><summary><code>{name}</code> -- "
-                      f"{len(raw) // 1024} KB, too large to inline, see artifact</summary></details>"
-                  )
-                  continue
-              b64 = base64.b64encode(raw).decode("ascii")
+              url = f"https://raw.githubusercontent.com/{repo}/ci-schematics-img/schematics/{name}.png"
               lines.append(
                   f'<details open><summary><code>{name}</code></summary>\n\n'
-                  f'<img src="data:image/png;base64,{b64}" alt="{name} schematic">\n'
+                  f'![{name} schematic]({url})\n'
                   f'</details>'
               )
               lines.append("")
