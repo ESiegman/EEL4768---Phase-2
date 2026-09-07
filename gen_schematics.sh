@@ -48,7 +48,7 @@ for name in alu imm rf decoder; do
     svg="${OUT_DIR}/${name}.svg"
     log="${OUT_DIR}/${name}.yosys.log"
 
-    yosys_script="read_verilog -sv ${sources}; hierarchy -top ${name}; proc; opt; write_json ${json}"
+    yosys_script="read_verilog -sv ${sources}; hierarchy -top ${name}; proc; opt; pmuxtree; opt_clean; write_json ${json}"
 
     if ! yosys -p "${yosys_script}" > "${log}" 2>&1; then
         echo "FAIL Schematic: ${name}  --  yosys synthesis error, see build/schematics/${name}.yosys.log"
