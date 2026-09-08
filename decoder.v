@@ -84,8 +84,86 @@ module decoder (
     // rather than directly to the PC + immediate. This is used for JALR.
     output wire        o_pc_sel
 );
-    // Your implementation goes under here
-    // ------------------------------------
+  wire [6:0] opcode = i_inst[6:0];
+  wire [4:0] rd = i_inst[11:7];
+  wire [2:0] funct3 = i_inst[14:12];
+  wire [4:0] rs1 = i_inst[19:15];
+  wire [4:0] rs2 = i_inst[24:20];
+  wire [6:0] funct7 = i_inst[31:25];
+
+  localparam reg [6:0] OpcLui = 7'b0110111;
+  localparam reg [6:0] OpcAuipc = 7'b0010111;
+  localparam reg [6:0] OpcJal = 7'b1101111;
+  localparam reg [6:0] OpcJalr = 7'b1100111;
+  localparam reg [6:0] OpcBranch = 7'b1100011;
+  localparam reg [6:0] OpcLoad = 7'b0000011;
+  localparam reg [6:0] OpcStore = 7'b0100011;
+  localparam reg [6:0] OpcOpImm = 7'b0010011;
+  localparam reg [6:0] OpcOp = 7'b0110011;
+
+  wire is_lui = (opcode == OpcLui);
+  wire is_auipc = (opcode == OpcAuipc);
+  wire is_jal = (opcode == OpcJal);
+
+  wire is_jalr = (opcode == OpcJalr && funct3 == 3'b000);
+  wire is_branch = (opcode == OpcBranch && !(funct3 == 3'b010 || funct3 == 3'b011));
+  wire is_load = (opcode == OpcLoad && !(funct3 == 3'b011 || funct3 == 3'b110 || funct3 == 3'b111));
+  wire is_store = (opcode == OpcStore && (funct3 == 3'b000 ||
+                funct3 == 3'b001 || funct3 == 3'b010));
+  wire is_op_imm = (opcode == OpcOpImm && (funct3 != 3'b001 ||
+                funct7 == 7'b0000000) && (funct3 != 3'b101 || (funct7 == 7'b0000000 ||
+                funct7 == 7'b0100000)));
+  wire is_op = (opcode == OpcOp && (funct7 == 7'b0000000 ||
+                ((funct3 == 3'b000 || funct3 == 3'b101) && funct7 == 7'b0100000)));
+  wire is_ebreak = (i_inst == 32'h00100073);
+  assign o_legal = is_lui | is_auipc | is_jal | is_jalr | is_branch |
+                    is_load | is_store | is_op_imm | is_op | is_ebreak;
+  assign o_halt = is_ebreak;
+
+  wire is_op_or_imm = is_op | is_op_imm;
+  wire is_dmem_access = is_load | is_store;
+
+  wire [5:0] format;
+  assign format[0] = is_op;
+  assign format[1] = is_jalr || is_load || is_op_imm;
+  assign format[2] = is_store;
+  assign format[3] = is_branch;
+  assign format[4] = is_lui || is_auipc;
+  assign format[5] = is_jal;
+
+  imm immediate (
+      .i_inst     (i_inst),
+      .i_format   (format),
+      .o_immediate(o_immediate)
+  );
+
+  assign o_rs1 = rs1;
+  assign o_rs2 = rs2;
+  assign o_op1_sel = is_auipc;
+  assign o_op2_sel = is_op_imm | is_load | is_store | is_auipc | is_jalr;
+  assign o_alu_opsel = is_op_or_imm ? funct3 : 3'b000;
+  assign o_alu_sub = is_op && funct3 == 3'b000 && funct7 == 7'b0100000;
+  assign o_alu_unsigned = is_branch ? funct3[1] : (is_op_or_imm && funct3 == 3'b011);
+  assign o_alu_arith = is_op_or_imm && funct3 == 3'b101 && funct7 == 7'b0100000;
+  assign o_branch = is_branch;
+  assign o_jump = is_jal | is_jalr;
+  assign o_pc_sel = is_jalr;
+  assign o_branch_equal = ~funct3[2];
+  assign o_branch_unsigned = funct3[1];
+  assign o_branch_invert = funct3[0];
+
+  assign o_dmem_ren = is_load;
+  assign o_dmem_wen = is_store;
+  assign o_dmem_memb = is_dmem_access && funct3[1:0] == 2'b00;
+  assign o_dmem_memh = is_dmem_access && funct3[1:0] == 2'b01;
+  assign o_dmem_memw = is_dmem_access && funct3[1:0] == 2'b10;
+  assign o_dmem_memu = is_load && funct3[2];
+  assign o_dmem_align = o_dmem_memw ? 2'b11 : (o_dmem_memh ? 2'b01 : 2'b00);
+  assign o_rd_sel[0] = is_op_or_imm | is_auipc;
+  assign o_rd_sel[1] = is_lui;
+  assign o_rd_sel[2] = o_jump;
+  assign o_rd_sel[3] = is_load;
+  assign o_rd = (|o_rd_sel) ? rd : 5'd0;
 
 endmodule
 
