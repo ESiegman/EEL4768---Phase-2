@@ -64,7 +64,7 @@ for name in alu imm rf decoder; do
 
     if [[ "${HAVE_RSVG}" -eq 1 ]]; then
         png="${OUT_DIR}/${name}.png"
-        rsvg-convert -o "${png}" "${svg}" >> "${log}" 2>&1 || true
+        rsvg-convert -b white -o "${png}" "${svg}" >> "${log}" 2>&1 || true
     fi
 
     echo "OK   Schematic: ${name}  --  build/schematics/${name}.svg"
