@@ -23,7 +23,21 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install Icarus Verilog, yosys and librsvg
-        run: sudo apt-get update && sudo apt-get install -y iverilog yosys librsvg2-bin
+        run: |
+          set -e
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list || true
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          for i in 1 2 3; do
+            if sudo apt-get update; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
+          sudo apt-get install -y iverilog yosys librsvg2-bin
 
       - name: Install netlistsvg
         run: npm install -g netlistsvg
