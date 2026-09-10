@@ -1,5 +1,10 @@
 `default_nettype none
 
+// The arithmetic logic unit (ALU) is responsible for performing the core
+// calculations of the processor. It takes two 32-bit operands and outputs
+// a 32 bit result based on the selection operation - addition, comparison,
+// shift, or logical operation. This ALU is a purely combinational block, so
+// you should not attempt to add any registers or pipeline it.
 module alu (
     // Major operation selection.
     // 3'b000: addition/subtraction if `i_sub` asserted
@@ -11,15 +16,29 @@ module alu (
     // 3'b110: or
     // 3'b111: and
     input  wire [ 2:0] i_opsel,
+    // When asserted, addition operations should subtract instead.
+    // This is only used for `i_opsel == 3'b000` (addition/subtraction).
     input  wire        i_sub,
+    // When asserted, comparison operations should be treated as unsigned.
     input  wire        i_unsigned,
+    // When asserted, right shifts should be treated as arithmetic instead of
+    // logical. This is only used for `i_opsel == 3'b101` (shift right).
     input  wire        i_arith,
+    // First 32-bit input operand.
     input  wire [31:0] i_op1,
+    // Second 32-bit input operand.
     input  wire [31:0] i_op2,
+    // 32-bit output result. Any carry out (from addition) should be ignored.
     output wire [31:0] o_result,
+    // Equality result. This is used downstream to determine if a
+    // branch should be taken.
     output wire        o_eq,
+    // Set less than result. This is used downstream to determine if a
+    // branch should be taken.
     output wire        o_slt
 );
+    // Your implementation goes under here
+    // ------------------------------------
 
     wire [31:0] add_op2;
     wire [31:0] add_propagate;
