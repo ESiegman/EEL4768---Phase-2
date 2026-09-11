@@ -46,8 +46,14 @@ jobs:
         id: check
         run: |
           set +e
-          ./run_test.sh ci
-          echo "status=$?" >> "$GITHUB_OUTPUT"
+          timeout --foreground --kill-after=30s 5m ./run_test.sh ci
+          status=$?
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            echo "::error::Testbench run timed out after 5 minutes. Likely a hanging simulation; see build/*.log."
+            mkdir -p results
+            echo "FAIL Verilog: timeout  --  run_test.sh timed out after 5 minutes; see Run your testbenches step log and build/*.log" >> results/ci.txt
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
 
       - name: Generate gate-level schematics
         id: schematics
