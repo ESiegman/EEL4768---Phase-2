@@ -82,7 +82,7 @@ generate
 if (BYPASS_EN != 0)
 begin : g_bypass
     wire rs1_byp = i_rd_wen && (i_rs1_raddr == i_rd_waddr) && (i_rs1_raddr != 5'd0);
-    wire rs2_byp = rs2_byp ? i_rd_wdata : rs2_stored;
+    wire rs2_byp = i_rd_wen && (i_rs2_raddr == i_rd_waddr) && (i_rs2_raddr != 5'd0);
     assign o_rs1_rdata = rs1_byp ? i_rd_wdata : rs1_stored;
     assign o_rs2_rdata = rs2_byp ? i_rd_wdata : rs2_stored;
 end
